@@ -261,6 +261,23 @@ static void bind_ns_files_from_child(pid_t *child, int fds[2])
 	}
 }
 
+static void waitchild(int pid)
+{
+	int rc, status;
+
+	do {
+		rc = waitpid(pid, &status, 0);
+		if (rc < 0) {
+			if (errno == EINTR)
+				continue;
+			err(EXIT_FAILURE, _("waitpid failed"));
+		}
+		if (WIFEXITED(status) &&
+		    WEXITSTATUS(status) != EXIT_SUCCESS)
+			exit(WEXITSTATUS(status));
+	} while (rc < 0);
+}
+
 static uid_t get_user(const char *s, const char *err)
 {
 	struct passwd *pw;
@@ -580,7 +597,6 @@ int main(int argc, char *argv[])
 	if (npersists && (pid || !forkit)) {
 		/* run in parent */
 		if (pid_bind && (unshare_flags & CLONE_NEWNS)) {
-			int rc;
 			char ch = PIPE_SYNC_BYTE;
 
 			/* signal child we are ready */
@@ -589,17 +605,7 @@ int main(int argc, char *argv[])
 			fds[1] = -1;
 
 			/* wait for bind_ns_files_from_child() */
-			do {
-				rc = waitpid(pid_bind, &status, 0);
-				if (rc < 0) {
-					if (errno == EINTR)
-						continue;
-					err(EXIT_FAILURE, _("waitpid failed"));
-				}
-				if (WIFEXITED(status) &&
-				    WEXITSTATUS(status) != EXIT_SUCCESS)
-					return WEXITSTATUS(status);
-			} while (rc < 0);
+			waitchild(pid_bind);
 		} else
 			/* simple way, just bind */
 			bind_ns_files(getpid());
